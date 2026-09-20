@@ -2,7 +2,9 @@
 
 A plain-C bare-metal example for `RAV0.5_FPGA_ALPHA_260908`. NH runs `main()`
 directly, prints `Hello, World!` and a check result over UART, and does not
-start RA or execute AME.
+start RA or execute AME. Linalg operators (currently
+[`qwen3-0.6b/add_1x1024`](../qwen3-0.6b/add_1x1024)) use [`../common/nr`](../common/nr/README.md)
+instead of this runtime; see the [parent README](../README.md).
 
 ## Quick start
 
