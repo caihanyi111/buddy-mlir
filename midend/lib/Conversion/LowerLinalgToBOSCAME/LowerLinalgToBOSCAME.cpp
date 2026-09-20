@@ -34,6 +34,7 @@
 
 #include "Dialect/BOSCAME/BOSCAMEDialect.h"
 #include "Dialect/BOSCAME/BOSCAMEOps.h"
+#include "Dialect/BOSCAME/Transforms/FPGAAMETarget.h"
 
 using namespace mlir;
 using namespace buddy::boscame;
@@ -1149,6 +1150,12 @@ public:
   LowerLinalgToBOSCAMEPass() = default;
   LowerLinalgToBOSCAMEPass(const LowerLinalgToBOSCAMEPass &) {}
 
+  Option<std::string> ameTarget{
+      *this, "target",
+      llvm::cl::desc("AME hardware contract: 'upstream' (default), "
+                     "'nr-fpga' (NH/RA), or 'qwen3-fpga' (legacy)."),
+      llvm::cl::init("")};
+
   void getDependentDialects(DialectRegistry &registry) const override {
     registry.insert<BOSCAMEDialect>();
     registry.insert<linalg::LinalgDialect>();
@@ -1165,23 +1172,45 @@ void LowerLinalgToBOSCAMEPass::runOnOperation() {
   MLIRContext *context = &getContext();
   ModuleOp module = getOperation();
 
-  RewritePatternSet patterns(context);
-  patterns.add<
-      MatmulToBOSCAMELowering, GenericMatmulToBOSCAMELowering,
-      GenericElementwiseToBOSCAMELowering, GenericUnarySquareToBOSCAMELowering,
-      GenericTransposeToBOSCAMELowering, GenericBroadcastToBOSCAMELowering>(
-      context);
+  FailureOr<AmeTargetProfile> profile =
+      resolveAmeTarget(module, ameTarget.getValue());
+  if (failed(profile)) {
+    signalPassFailure();
+    return;
+  }
 
+  if (*profile != AmeTargetProfile::Upstream)
+    module->setAttr(
+        kAmeTargetAttrName,
+        StringAttr::get(context, stringifyAmeTargetProfile(*profile)));
+
+  if (isFpgaTarget(*profile) && failed(verifyFpgaAmeCapabilities(module))) {
+    signalPassFailure();
+    return;
+  }
+
+  RewritePatternSet patterns(context);
   ConversionTarget target(*context);
   target.addLegalDialect<BOSCAMEDialect, arith::ArithDialect,
                          memref::MemRefDialect, scf::SCFDialect>();
-  target.addIllegalOp<linalg::MatmulOp>();
-  target.addDynamicallyLegalOp<linalg::GenericOp>(
-      [](linalg::GenericOp op) { return !isLowerableGeneric(op); });
 
-  if (failed(applyPartialConversion(module, target, std::move(patterns)))) {
-    signalPassFailure();
+  if (*profile == AmeTargetProfile::NrFpga) {
+    // NR: do not lower elementwise add/mul to BOSCAME. Leave linalg.generic
+    // for convert-linalg-to-loops (board-validated add_1x1024 path).
+    target.addLegalOp<linalg::MatmulOp, linalg::GenericOp>();
+  } else {
+    patterns.add<MatmulToBOSCAMELowering, GenericMatmulToBOSCAMELowering,
+                 GenericElementwiseToBOSCAMELowering,
+                 GenericUnarySquareToBOSCAMELowering,
+                 GenericTransposeToBOSCAMELowering,
+                 GenericBroadcastToBOSCAMELowering>(context);
+    target.addIllegalOp<linalg::MatmulOp>();
+    target.addDynamicallyLegalOp<linalg::GenericOp>(
+        [](linalg::GenericOp op) { return !isLowerableGeneric(op); });
   }
+
+  if (failed(applyPartialConversion(module, target, std::move(patterns))))
+    signalPassFailure();
 }
 
 //===----------------------------------------------------------------------===//
