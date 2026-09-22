@@ -1,12 +1,30 @@
 #===- nr_copy.S - Aligned RVV memcpy for NR -------------------------------===#
 #
-# Adapted from ModelZoo runtime/asm/qwen35_rvv_copy.S at commit
-# 8815b74fb6d3cd6288c4d99ac6fd7c5d041a7cc3. NR-validated e32,m1 copy subset:
-# at most 16 lanes per issue and fences at both sides of every vector memory
-# operation. Scalar paths handle unaligned bytes. C ABI:
-#   void nr_copy_bytes(void *dst, const void *src, size_t bytes);
-# Source and destination must not overlap. v8/vl/vtype are caller-clobbered.
-# See README.md for provenance; this tree does not invent license text.
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+#===----------------------------------------------------------------------===#
+#
+# void nr_copy_bytes(void *dst, const void *src, size_t bytes);
+#
+# Non-overlapping copy used by the NR operator runtime. When dst and src are
+# both 4-byte aligned, copies with RVV e32/m1 (at most 16 lanes per issue) and
+# places fence rw,rw on both sides of every vector memory op (NR contract).
+# Unaligned pointers and the final 0..3 bytes use scalar byte loads/stores.
+# Clobbers v8, vl, and vtype; callers must not retain vector state across the
+# call.
+#
+# Adapted from ModelZoo runtime/asm/qwen35_rvv_copy.S (commit
+# 8815b74fb6d3cd6288c4d99ac6fd7c5d041a7cc3). See README.md for provenance.
 #
 #===----------------------------------------------------------------------===#
 
@@ -15,15 +33,17 @@
   .globl nr_copy_bytes
   .type nr_copy_bytes,@function
 nr_copy_bytes:
+  # a0=dst, a1=src, a2=bytes
   beqz a2, .Ldone
+  # Fall back to bytes if either pointer is not 4-byte aligned.
   or t1, a0, a1
   andi t1, t1, 3
   bnez t1, .Lbytes
-  andi a3, a2, 3
-  srli a2, a2, 2
+  andi a3, a2, 3          # leftover bytes after word copies
+  srli a2, a2, 2          # remaining 32-bit words
   beqz a2, .Ltail
 .Lwords:
-  li t0, 16
+  li t0, 16               # VL max for e32,m1 on this board path
   bgeu a2, t0, .Lsetvl
   mv t0, a2
 .Lsetvl:

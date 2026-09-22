@@ -1,8 +1,22 @@
 //===- support.c - MemRef / workspace helpers for NR operators ------------===//
 //
-// Host and board implementations of workspace() and print_check. Part of the
-// NR operator example suite; see ../common/README.md for provenance. This tree
-// does not invent license text for ModelZoo-derived sources.
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+//===----------------------------------------------------------------------===//
+//
+// Host and board implementations of workspace() and print_check.
+// HOST_TEST uses a static arena and stdio; board builds place qwen_arena in
+// .workspace (NOLOAD). See ../common/README.md for provenance.
 //
 //===----------------------------------------------------------------------===//
 
@@ -22,13 +36,13 @@ void nr_hex32(uint32_t x) { printf("%08x", x); }
 void nr_hex64(uint64_t x) { printf("%016llx", (unsigned long long)x); }
 uint64_t nr_cycles(void) { return (uint64_t)clock(); }
 #else
-/* Explicit NOBITS keeps each object small as well as the final raw image. */
+// Explicit NOBITS keeps each object small as well as the final raw image.
 __asm__(".section .workspace,\"aw\",@nobits\n.balign 64\nqwen_arena:\n.skip "
         "671088640\n.previous\n");
 extern unsigned char arena[] __asm__("qwen_arena");
 #endif
-/* NOLOAD on NR, outside the b0000000..b7ffffff fault aperture. Each test
- * initializes exactly the elements its kernel may read; no huge upload. */
+// NOLOAD on NR, outside the b0000000..b7ffffff fault aperture. Each test
+// initializes exactly the elements its kernel may read; no huge upload.
 #ifdef HOST_TEST
 static unsigned char arena[640u * 1024u * 1024u] ARENA_ATTR;
 #endif
@@ -40,12 +54,12 @@ int check_close(float a, float b, float atol, float rtol) {
   } av = {a}, bv = {b};
   if ((av.u & 0x7f800000u) == 0x7f800000u ||
       (bv.u & 0x7f800000u) == 0x7f800000u)
-    return a == b; /* Only equal infinities pass; NaNs never do. */
+    return a == b; // Only equal infinities pass; NaNs never do.
   float d = a - b;
   if (d < 0)
     d = -d;
   float v = b < 0 ? -b : b;
-  return d <= atol + rtol * v; /* NaNs always fail. */
+  return d <= atol + rtol * v; // NaNs always fail.
 }
 int print_check(const char *name, unsigned errors, float max_error) {
   nr_puts("verify ");

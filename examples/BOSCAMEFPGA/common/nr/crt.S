@@ -1,8 +1,31 @@
 #===- crt.S - NH/RA entry for NR operator images --------------------------===#
 #
-# NH/RA entry contract adapted from ModelZoo thirdparty/nr/startup/crt_uart.S.
-# RA owns application BSS. Neither core clears the separate .workspace.
-# See README.md for provenance; this tree does not invent license text.
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+#===----------------------------------------------------------------------===#
+#
+# Dual-hart CRT for NR operator binaries (not hello's crt_uart.S).
+#
+# NH path (_start):
+#   Disable interrupts, enable FP state, set gp/sp/tp/mtvec, jump to nr_nh_main.
+#   nr_nh_main owns UART, starts RA, and drains the console ring.
+#
+# RA path (_ra_start):
+#   Enable VS/FS/XS/AME, set RA stack, announce entry, clear application BSS
+#   and TBSS (not .workspace), then jump to nr_ra_main -> launch().
+#
+# Trap paths reset the matching stack and tail-call C reporters.
+# Adapted from ModelZoo thirdparty/nr/startup/crt_uart.S; see README.md.
 #
 #===----------------------------------------------------------------------===#
 
@@ -10,7 +33,9 @@
   .globl _start
   .type _start,@function
 _start:
+  # NH hart entry at 0x80000000 (nr.ld).
   csrw mie, zero
+  # Enable FS (bits 14:13) so FPU state is usable after boot.
   li t0, 0x6000
   csrs mstatus, t0
 .option push
@@ -29,8 +54,9 @@ _start:
   .globl _ra_start
   .type _ra_start,@function
 _ra_start:
+  # RA entry address is written into the NH->RA mailbox by nr_nh_main.
   csrw mie, zero
-  # VS[10:9], FS[14:13], XS[16:15], AME MS[26:25].
+  # VS[10:9], FS[14:13], XS[16:15], AME MS[26:25] — required for AME/RVV paths.
   li t0, 0x0601e600
   csrs mstatus, t0
 .option push
@@ -42,8 +68,8 @@ _ra_start:
   la t0, .Lra_trap
   csrw mtvec, t0
   csrw fcsr, zero
-  # Log before clearing potentially large application BSS. The console is
-  # initialized by NH and resides in a separate, non-BSS output section.
+  # Log before clearing potentially large application BSS. The console ring is
+  # initialized by NH and lives in a separate NOLOAD section (.nr_console).
   call nr_ra_entered
   la t0, __bss_start
   la t1, __bss_end
@@ -61,12 +87,13 @@ _ra_start:
   addi t0, t0, 8
   j 3b
 4:
+  # Neither core clears .workspace; launch() must initialize what it reads.
   fence rw, rw
   tail nr_ra_main
   .size _ra_start, .-_ra_start
 
-  # Trap reporting is terminal, so no interrupted register frame is needed.
-  # Reset the stack as well: this also reports stack faults where possible.
+  # Trap reporting is terminal: reset the stack (covers stack faults) and
+  # hand mcause/mepc/mtval to the C reporter without restoring a frame.
   .balign 4
 .Lnh_trap:
   la sp, __stack_top

@@ -1,10 +1,26 @@
 //===- nr_math.c - Freestanding math helpers for NR operators -------------===//
 //
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+//===----------------------------------------------------------------------===//
+//
 // exp/log tables and freestanding routines migrated from ModelZoo
 // examples/buddy-qwen35-fpga/runtime/src/qwen35_bare_math.c, commit
 // 8815b74fb6d3cd6288c4d99ac6fd7c5d041a7cc3. Arm exp/log tables are from MIT
-// licensed optimized-routines. See README.md; this tree does not invent
-// license text for those sources.
+// licensed optimized-routines. See README.md for provenance.
+//
+// Soft-float helpers used by MLIR kernels on RA (no libm). Not a full IEEE
+// math library — coverage matches what the operator suite needs.
 //
 //===----------------------------------------------------------------------===//
 
@@ -42,9 +58,9 @@ static double asdouble(uint64_t x) {
   return u.f;
 }
 
-/* Arm optimized-routines single-precision exp/log tables (MIT licensed).
- * These implementations use double only for range reduction and polynomial
- * evaluation.  They remain freestanding and generate ordinary RV64GC code. */
+// Arm optimized-routines single-precision exp/log tables (MIT licensed).
+// These implementations use double only for range reduction and polynomial
+// evaluation.  They remain freestanding and generate ordinary RV64GC code.
 static const uint64_t exp2_tab[32] = {
     0x3ff0000000000000ULL, 0x3fefd9b0d3158574ULL, 0x3fefb5586cf9890fULL,
     0x3fef9301d0125b51ULL, 0x3fef72b83c7d517bULL, 0x3fef54873168b9aaULL,
@@ -184,9 +200,9 @@ float sqrtf(float value) {
 #endif
 }
 
-/* RoPE angles: range reduction uses double, polynomial evaluation avoids a
- * target libm dependency. Supported finite domain is |x| <= 2^20 radians;
- * outside it return NaN rather than claiming general libm accuracy. */
+// RoPE angles: range reduction uses double, polynomial evaluation avoids a
+// target libm dependency. Supported finite domain is |x| <= 2^20 radians;
+// outside it return NaN rather than claiming general libm accuracy.
 static float sine_or_cosine(float value, int cosine) {
   uint32_t bits = asuint(value) & 0x7fffffffU;
   if (bits > 0x49800000U)

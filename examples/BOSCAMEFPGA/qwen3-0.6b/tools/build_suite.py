@@ -1,8 +1,26 @@
 #!/usr/bin/env python3
 """Link selected, independently generated operator objects into one NR image.
 
-Part of the NR operator example suite.
+Reads each operator directory's metadata.json / built objects, packs them with
+the shared NR CRT + runtime, and emits a single UVHS-loadable .bin. Used by
+make suite targets under qwen3-0.6b/; does not recompile kernels itself.
 """
+
+# ===- build_suite.py -------------------------------------------------------------
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+# ===----------------------------------------------------------------------
 
 import argparse
 import hashlib
