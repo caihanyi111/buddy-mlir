@@ -1,7 +1,7 @@
 # NR NH/RA operator runtime
 
-NH/RA firmware for linalg operators such as
-[`../../qwen3-0.6b/add_1x1024`](../../qwen3-0.6b/add_1x1024). Hello does
+NH/RA firmware for linalg operators under
+[`../../qwen3-0.6b`](../../qwen3-0.6b/README.md). Hello does
 **not** use this directory; it keeps [`../runtime`](../README.md).
 
 NH starts at `0x80000000`, initializes the shared [`../uart`](../uart) driver,
@@ -39,7 +39,7 @@ nr/
 
 General C (runtime + launch) must use `-march=rv64gc_zicbom` without `+v`.
 Only audited kernel assembly and `nr_copy.S` may use vector target options.
-`add_1x1024` stays on the scalar llc path.
+Elementwise operators (for example `add_1x1024`) stay on the scalar llc path.
 
 ## Logging and UART
 
@@ -81,24 +81,4 @@ are copied out. `memcpy` / `memmove` / `memset` / `memcmp` and MLIR
 non-transposed B load. NR does not support transposed B loads. The helper
 changes AME configuration; call it at operator boundaries only. Generated
 kernels that emit AME ops must still put `fence rw, rw` around each AME
-instruction. `add_1x1024` does not emit AME ops.
-
-## Math and provenance
-
-Startup, mailbox, log sync, and AME sync follow ModelZoo `thirdparty/nr`
-and related FPGA platform sources, trimmed for this tree.
-`nr_math.c` exp/log tables come from that project's bare math (Arm tables
-under MIT optimized-routines). `sqrtf` uses `fsqrt.s`. `sinf` / `cosf` are
-RoPE helpers, not a full libm.
-
-| File | Origin (ModelZoo / related) |
-| --- | --- |
-| `crt.S`, `nr.ld`, `nr_runtime.*` | `thirdparty/nr` and FPGA NH/RA platform |
-| `ame_sync.c` | `examples/tools/bare_runtime.c` |
-| `nr_copy.S` | `runtime/asm/qwen35_rvv_copy.S` |
-| `nr_math.c` | `examples/buddy-qwen35-fpga/runtime/src/qwen35_bare_math.c` |
-
-Reference: https://gitlink.org.cn/michaelcjl/ModelZoo.git commit
-`8815b74fb6d3cd6288c4d99ac6fd7c5d041a7cc3`. The build does not clone it.
-File banners name that origin; **this tree does not invent license text** for
-those sources (same policy as [`../README.md`](../README.md)).
+instruction. Pure elementwise operators do not emit AME ops.

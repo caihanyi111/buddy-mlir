@@ -1,25 +1,39 @@
 //===- nr_runtime.c - NH/RA operator runtime ------------------------------===//
 //
-// Mailbox, UART ring, malloc, and memrefCopy for NR operators. Adapted from
-// ModelZoo thirdparty/nr and FPGA platform NH/RA sources. See README.md for
-// provenance; this tree does not invent license text.
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+//===----------------------------------------------------------------------===//
+//
+// NH owns UART MMIO and starts RA; RA runs launch() and writes the console
+// ring. Cache maintenance (cbo.flush / cbo.inval) is NH-only. Adapted from
+// ModelZoo thirdparty/nr and FPGA platform NH/RA sources; see README.md.
 //
 //===----------------------------------------------------------------------===//
 
 #include "nr_runtime.h"
 #include "../uart/uart.h"
 
-/* NR's RA does not use NH cache-management instructions. NH invalidates each
- * shared line before reading it; RA publishes data with volatile + fences,
- * matching ModelZoo's validated NR console and completion protocol. */
+// NR's RA does not use NH cache-management instructions. NH invalidates each
+// shared line before reading it; RA publishes data with volatile + fences,
+// matching ModelZoo's validated NR console and completion protocol.
 #define RA_SIGNAL ((volatile uint8_t *)0x80010000UL)
 #define RA_REGISTER(offset) (*(volatile uint32_t *)(0x50000000UL + (offset)))
 #define LOG_CAPACITY (64u * 1024u)
 
 static volatile struct {
-  uint32_t count; /* advanced by RA */
+  uint32_t count; // advanced by RA
   unsigned char count_padding[60];
-  uint32_t consumed; /* advanced by NH */
+  uint32_t consumed; // advanced by NH
   unsigned char consumed_padding[60];
   char data[LOG_CAPACITY];
 } console __attribute__((section(".bss.nr_console"), aligned(64)));
@@ -28,8 +42,8 @@ extern void _ra_start(void);
 extern unsigned char __heap_start[], __heap_end[];
 static uintptr_t heap_cursor;
 
-/* Defined further down; forward-declared so the diagnostic sampling below can
- * use them without depending on where it happens to sit in the file. */
+// Defined further down; forward-declared so the diagnostic sampling below can
+// use them without depending on where it happens to sit in the file.
 static void host_puts(const char *text);
 static void host_hex(uint64_t value);
 
@@ -41,26 +55,26 @@ static void invalidate(const volatile void *pointer) {
   __asm__ volatile("cbo.inval (%0)" ::"r"(pointer) : "memory");
 }
 
-/* UART input has the same ownership problem as output, in the other direction:
- * the NH core owns the UART, so uart_getc() called from RA sees nothing. NH
- * polls the receive line in the same loop that drains the console and
- * republishes what it finds here, and RA consumes it with nr_getchar(). RA
- * accesses shared DDR without NH cache instructions. Each writer owns a
- * separate cache line: NH flushes head/data, and invalidates the RA-owned tail
- * before reading it. */
+// UART input has the same ownership problem as output, in the other direction:
+// the NH core owns the UART, so uart_getc() called from RA sees nothing. NH
+// polls the receive line in the same loop that drains the console and
+// republishes what it finds here, and RA consumes it with nr_getchar(). RA
+// accesses shared DDR without NH cache instructions. Each writer owns a
+// separate cache line: NH flushes head/data, and invalidates the RA-owned tail
+// before reading it.
 #define RX_CAPACITY (4u * 1024u)
 static volatile struct {
-  uint32_t head; /* advanced by NH */
+  uint32_t head; // advanced by NH
   unsigned char head_padding[60];
-  uint32_t tail; /* advanced by RA */
+  uint32_t tail; // advanced by RA
   unsigned char tail_padding[60];
   char data[RX_CAPACITY];
 } input __attribute__((section(".bss.nr_console"), aligned(64)));
 
-/* NH side: move anything the UART has received into the ring. */
+// NH side: move anything the UART has received into the ring.
 static void pump_input(void) {
   for (unsigned i = 0; i < 64 && uart_rx_ready(); ++i) {
-    /* RBR reads consume bytes: debug output must reuse this one read. */
+    // RBR reads consume bytes: debug output must reuse this one read.
     unsigned char value = (unsigned char)UART_RBR_THR_DLL;
 #ifdef NR_UART_DEBUG
     host_puts("[n] received=");
@@ -72,7 +86,7 @@ static void pump_input(void) {
     fence();
     uint32_t tail = input.tail;
     if (head - tail >= RX_CAPACITY)
-      continue; /* full: drop, do not block */
+      continue; // full: drop, do not block
     input.data[head & (RX_CAPACITY - 1u)] = value;
     flush(&input.data[head & (RX_CAPACITY - 1u)]);
     fence();
@@ -82,7 +96,7 @@ static void pump_input(void) {
   }
 }
 
-/* RA side: one character, or -1 when nothing is waiting. */
+// RA side: one character, or -1 when nothing is waiting.
 int nr_getchar(void) {
   uint32_t head = input.head;
   uint32_t tail = input.tail;
@@ -111,9 +125,9 @@ static void host_hex(uint64_t value) {
 }
 
 #ifdef NR_UART_DEBUG
-/* Diagnostic only, compiled in with -DNR_UART_DEBUG. This runs on NH -- the
- * core that owns the UART -- because a probe running on RA reads zeros from
- * every register and therefore says nothing. */
+// Diagnostic only, compiled in with -DNR_UART_DEBUG. This runs on NH -- the
+// core that owns the UART -- because a probe running on RA reads zeros from
+// every register and therefore says nothing.
 static void uart_debug_sample(void) {
   static uint32_t last_lsr = 0xffffffffu;
   static uint32_t ticks = 0;
@@ -133,8 +147,8 @@ static void uart_debug_sample(void) {
 
 void write_serial(char value) {
   uint32_t count = console.count;
-  /* A bounded single-producer/single-consumer ring: wait for NH to drain
-   * instead of losing all output after the first 64 KiB of a long session. */
+  // A bounded single-producer/single-consumer ring: wait for NH to drain
+  // instead of losing all output after the first 64 KiB of a long session.
   while ((uint32_t)(count - console.consumed) >= LOG_CAPACITY)
     fence();
   console.data[count & (LOG_CAPACITY - 1u)] = value;
@@ -165,8 +179,8 @@ uint64_t nr_cycles(void) {
   __asm__ volatile("rdcycle %0" : "=r"(value));
   return value;
 }
-/* Compatibility with ModelZoo standalone operator diagnostics. Only NH calls
- * the real uart_init: application code always runs on RA. */
+// Compatibility with ModelZoo standalone operator diagnostics. Only NH calls
+// the real uart_init: application code always runs on RA.
 void init_uart(uint32_t frequency, uint32_t baud) {
   (void)frequency;
   (void)baud;
@@ -179,7 +193,7 @@ static uint32_t drain(uint32_t consumed) {
   invalidate(&console.count);
   fence();
   uint32_t end = console.count;
-  /* Keep RX/completion polling responsive while the UART drains long output. */
+  // Keep RX/completion polling responsive while the UART drains long output.
   if ((uint32_t)(end - consumed) > 256u)
     end = consumed + 256u;
   while (consumed != end) {
@@ -209,7 +223,7 @@ __attribute__((noreturn)) void nr_nh_main(void) {
   console.consumed = 0;
   flush(&console.count);
   flush(&console.consumed);
-  /* .nr_console is NOLOAD and excluded from RA's BSS initialization. */
+  // .nr_console is NOLOAD and excluded from RA's BSS initialization.
   input.head = 0;
   input.tail = 0;
   flush(&input.head);
@@ -303,7 +317,7 @@ __attribute__((noreturn)) void __stack_chk_fail(void) {
 }
 uintptr_t __stack_chk_guard = (uintptr_t)0x9e3779b97f4a7c15ULL;
 
-/* Ordinary scalar memory operations avoid unsupported vector spills/CSRs. */
+// Ordinary scalar memory operations avoid unsupported vector spills/CSRs.
 typedef uint64_t CopyWord __attribute__((may_alias));
 void *memcpy(void *destination, const void *source, size_t count) {
   unsigned char *out = destination;
@@ -402,7 +416,7 @@ void *calloc(size_t count, size_t size) {
   return result;
 }
 
-/* Standard MLIR CRunner ABI; rank <= 8, arbitrary strided element copies. */
+// Standard MLIR CRunner ABI; rank <= 8, arbitrary strided element copies.
 typedef struct {
   int64_t rank;
   void *descriptor;
