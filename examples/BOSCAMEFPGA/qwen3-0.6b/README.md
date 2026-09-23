@@ -45,6 +45,21 @@ add one row here (and the directory); do not update the parent
 | [`gqa_repeat_8x17x128_to_16x17x128/`](gqa_repeat_8x17x128_to_16x17x128/) | Working | GQA repeat_kv |
 | [`attention_scale_mask_16x1x17/`](attention_scale_mask_16x1x17/) | Working | attention scale+mask |
 | [`attention_scale_mask_16x16x16/`](attention_scale_mask_16x16x16/) | Working | attention scale+mask |
+| [`quantize_1x1024/`](quantize_1x1024/) | Working | per-token f32 to i8 |
+| [`quantize_16x1024/`](quantize_16x1024/) | Working | per-token f32 to i8 |
+| [`quantize_1x2048/`](quantize_1x2048/) | Working | per-token f32 to i8 |
+| [`quantize_16x2048/`](quantize_16x2048/) | Working | per-token f32 to i8 |
+| [`quantize_1x3072/`](quantize_1x3072/) | Working | per-token f32 to i8 |
+| [`quantize_16x3072/`](quantize_16x3072/) | Working | per-token f32 to i8 |
+| [`dequantize_1x1024/`](dequantize_1x1024/) | Working | i32 to f32 |
+| [`dequantize_16x1024/`](dequantize_16x1024/) | Working | i32 to f32 |
+| [`dequantize_1x2048/`](dequantize_1x2048/) | Working | i32 to f32 |
+| [`dequantize_16x2048/`](dequantize_16x2048/) | Working | i32 to f32 |
+| [`dequantize_1x3072/`](dequantize_1x3072/) | Working | i32 to f32 |
+| [`dequantize_16x3072/`](dequantize_16x3072/) | Working | i32 to f32 |
+| [`dequantize_1x151936/`](dequantize_1x151936/) | Working | i32 to f32 |
+| [`embedding_w8a8_1x1024/`](embedding_w8a8_1x1024/) | Working | int8 embedding gather |
+| [`embedding_w8a8_16x1024/`](embedding_w8a8_16x1024/) | Working | int8 embedding gather |
 
 ## Build / run pattern
 
