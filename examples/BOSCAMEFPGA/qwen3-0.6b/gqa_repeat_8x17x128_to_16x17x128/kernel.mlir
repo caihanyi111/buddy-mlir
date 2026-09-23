@@ -1,0 +1,27 @@
+// GQA repeat_kv: query head h reads KV head floor(h/2), retaining token and
+// head_dim axes (gqa_repeat_8x17x128_to_16x17x128, f32). Part of the NR operator
+// example suite; see ../../common/README.md for provenance.
+
+#map = affine_map<(d0, d1, d2) -> (d0, d1, d2)>
+
+module {
+  func.func @kernel_gqa_repeat_8x17x128_to_16x17x128(
+      %x: memref<8x17x128xf32>,
+      %out: memref<16x17x128xf32>) attributes {llvm.emit_c_interface} {
+    %c2 = arith.constant 2 : index
+    linalg.generic {
+        indexing_maps = [#map],
+        iterator_types = ["parallel", "parallel", "parallel"]
+      }
+      outs(%out : memref<16x17x128xf32>) {
+    ^bb0(%v0: f32):
+      %h = linalg.index 0 : index
+      %t = linalg.index 1 : index
+      %d = linalg.index 2 : index
+      %kv_head = arith.divui %h, %c2 : index
+      %value = memref.load %x[%kv_head, %t, %d] : memref<8x17x128xf32>
+      linalg.yield %value : f32
+    }
+    return
+  }
+}

@@ -1,0 +1,54 @@
+// Stable attention softmax: subtract row maximum, exponentiate and normalize
+// along cache length (softmax_16x16x16, f32). Part of the NR operator example
+// suite; see ../../common/README.md for provenance.
+
+#map = affine_map<(d0, d1, d2) -> (d0, d1, d2)>
+#map1 = affine_map<(d0, d1, d2) -> (d0, d1)>
+
+module {
+  func.func @kernel_softmax_16x16x16(
+      %x: memref<16x16x16xf32>,
+      %maxima: memref<16x16xf32>,
+      %sums: memref<16x16xf32>,
+      %out: memref<16x16x16xf32>) attributes {llvm.emit_c_interface} {
+    %zero = arith.constant 0.0 : f32
+    %negative_inf = arith.constant 0xFF800000 : f32
+    linalg.fill ins(%negative_inf : f32) outs(%maxima : memref<16x16xf32>)
+    linalg.fill ins(%zero : f32) outs(%sums : memref<16x16xf32>)
+    linalg.generic {
+        indexing_maps = [#map, #map1],
+        iterator_types = ["parallel", "parallel", "reduction"]
+      }
+      ins(%x : memref<16x16x16xf32>)
+      outs(%maxima : memref<16x16xf32>) {
+    ^bb0(%v0: f32, %v1: f32):
+      %m = arith.maximumf %v0, %v1 : f32
+      linalg.yield %m : f32
+    }
+    linalg.generic {
+        indexing_maps = [#map, #map1, #map1],
+        iterator_types = ["parallel", "parallel", "reduction"]
+      }
+      ins(%x, %maxima : memref<16x16x16xf32>, memref<16x16xf32>)
+      outs(%sums : memref<16x16xf32>) {
+    ^bb0(%v0: f32, %v1: f32, %v2: f32):
+      %d = arith.subf %v0, %v1 : f32
+      %e = math.exp %d : f32
+      %sum = arith.addf %v2, %e : f32
+      linalg.yield %sum : f32
+    }
+    linalg.generic {
+        indexing_maps = [#map, #map1, #map1, #map],
+        iterator_types = ["parallel", "parallel", "parallel"]
+      }
+      ins(%x, %maxima, %sums : memref<16x16x16xf32>, memref<16x16xf32>, memref<16x16xf32>)
+      outs(%out : memref<16x16x16xf32>) {
+    ^bb0(%v0: f32, %v1: f32, %v2: f32, %v3: f32):
+      %d = arith.subf %v0, %v1 : f32
+      %e = math.exp %d : f32
+      %r = arith.divf %e, %v2 : f32
+      linalg.yield %r : f32
+    }
+    return
+  }
+}

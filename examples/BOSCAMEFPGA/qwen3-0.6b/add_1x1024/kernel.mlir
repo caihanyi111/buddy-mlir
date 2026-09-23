@@ -1,5 +1,6 @@
-// Residual add for Qwen3-0.6B (1x1024 f32). Part of the NR operator example
-// suite; see ../../common/README.md for provenance.
+// Residual connection (add_1x1024, f32). Part of the NR operator example suite;
+// see ../../common/README.md for provenance.
+
 #map = affine_map<(d0, d1) -> (d0, d1)>
 
 module {
@@ -13,8 +14,8 @@ module {
       }
       ins(%x, %y : memref<1x1024xf32>, memref<1x1024xf32>)
       outs(%out : memref<1x1024xf32>) {
-    ^bb0(%a: f32, %b: f32, %unused: f32):
-      %r = arith.addf %a, %b : f32
+    ^bb0(%v0: f32, %v1: f32, %v2: f32):
+      %r = arith.addf %v0, %v1 : f32
       linalg.yield %r : f32
     }
     return

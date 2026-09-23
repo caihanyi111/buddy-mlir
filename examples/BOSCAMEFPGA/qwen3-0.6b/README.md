@@ -10,7 +10,41 @@ add one row here (and the directory); do not update the parent
 
 | Operator | Status | Notes |
 | --- | --- | --- |
-| [`add_1x1024/`](add_1x1024/) | Working | `1x1024` f32 elementwise add |
+| [`add_1x1024/`](add_1x1024/) | Working | f32 elementwise add |
+| [`add_16x1024/`](add_16x1024/) | Working | f32 elementwise add |
+| [`mul_1x3072/`](mul_1x3072/) | Working | f32 elementwise mul |
+| [`mul_16x3072/`](mul_16x3072/) | Working | f32 elementwise mul |
+| [`silu_1x3072/`](silu_1x3072/) | Working | f32 SiLU |
+| [`silu_16x3072/`](silu_16x3072/) | Working | f32 SiLU |
+| [`rmsnorm_1x1024/`](rmsnorm_1x1024/) | Working | f32 RMSNorm |
+| [`rmsnorm_16x1024/`](rmsnorm_16x1024/) | Working | f32 RMSNorm |
+| [`rmsnorm_8x128/`](rmsnorm_8x128/) | Working | f32 RMSNorm (per-head) |
+| [`rmsnorm_16x128/`](rmsnorm_16x128/) | Working | f32 RMSNorm (per-head) |
+| [`rmsnorm_128x128/`](rmsnorm_128x128/) | Working | f32 RMSNorm (per-head) |
+| [`rmsnorm_256x128/`](rmsnorm_256x128/) | Working | f32 RMSNorm (per-head) |
+| [`softmax_16x16x16/`](softmax_16x16x16/) | Working | f32 softmax |
+| [`softmax_16x1x17/`](softmax_16x1x17/) | Working | f32 softmax |
+| [`rope_1x8x128/`](rope_1x8x128/) | Working | f32 RoPE |
+| [`rope_1x16x128/`](rope_1x16x128/) | Working | f32 RoPE |
+| [`rope_16x8x128/`](rope_16x8x128/) | Working | f32 RoPE |
+| [`rope_16x16x128/`](rope_16x16x128/) | Working | f32 RoPE |
+| [`embedding_1x1024/`](embedding_1x1024/) | Working | f32 embedding gather |
+| [`embedding_16x1024/`](embedding_16x1024/) | Working | f32 embedding gather |
+| [`layout_q_1x16x128/`](layout_q_1x16x128/) | Working | Q layout transpose |
+| [`layout_q_16x16x128/`](layout_q_16x16x128/) | Working | Q layout transpose |
+| [`layout_k_16x16x128/`](layout_k_16x16x128/) | Working | K layout transpose |
+| [`layout_k_16x17x128/`](layout_k_16x17x128/) | Working | K layout transpose |
+| [`layout_k_16x512x128/`](layout_k_16x512x128/) | Working | K layout transpose |
+| [`layout_context_8x1x128/`](layout_context_8x1x128/) | Working | context layout |
+| [`layout_context_8x16x128/`](layout_context_8x16x128/) | Working | context layout |
+| [`layout_context_16x1x128/`](layout_context_16x1x128/) | Working | context layout |
+| [`layout_context_16x16x128/`](layout_context_16x16x128/) | Working | context layout |
+| [`kv_cache_update_1x8x128/`](kv_cache_update_1x8x128/) | Working | KV cache update |
+| [`kv_cache_update_16x8x128/`](kv_cache_update_16x8x128/) | Working | KV cache update |
+| [`gqa_repeat_8x16x128_to_16x16x128/`](gqa_repeat_8x16x128_to_16x16x128/) | Working | GQA repeat_kv |
+| [`gqa_repeat_8x17x128_to_16x17x128/`](gqa_repeat_8x17x128_to_16x17x128/) | Working | GQA repeat_kv |
+| [`attention_scale_mask_16x1x17/`](attention_scale_mask_16x1x17/) | Working | attention scale+mask |
+| [`attention_scale_mask_16x16x16/`](attention_scale_mask_16x16x16/) | Working | attention scale+mask |
 
 ## Build / run pattern
 
