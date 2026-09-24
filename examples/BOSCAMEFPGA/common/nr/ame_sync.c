@@ -25,12 +25,23 @@
 //===----------------------------------------------------------------------===//
 
 #include "nr_runtime.h"
+
+// FPGA mtype bit-field (not the upstream raw element width):
+//   bit 16 = mma, bit 4 = mint8, bit 6 = mint32, bits 1:0 = msew.
+// int8 MMA is msew=e8; the accumulator cell is msew=e32.
 #define AME_MTYPE_INT8 ((1ULL << 16) | (1ULL << 4) | 0x0ULL)
 #define AME_MTYPE_INT32 ((1ULL << 16) | (1ULL << 6) | 0x2ULL)
+
+// 64-byte aligned 1x1 tiles. A and B are the MMA inputs; the float cell is
+// the int32 accumulator load/store target used only to retire the pipeline.
 static float ame_sync_cell[1] __attribute__((aligned(64))) = {0.0f};
 static int8_t ame_sync_a[1] __attribute__((aligned(64))) = {1};
 static int8_t ame_sync_b[1] __attribute__((aligned(64))) = {1};
 
+// Each helper is one fixed NR encoding from ame_to_word.py, wrapped in
+// fence rw,rw. Registers match that tool's fixed-GPR contract.
+
+// msettilem: a0 = remaining rows, result in a6. Encoding 0x04055877.
 static inline int ame_msettilem(int rem) {
   register size_t in asm("a0") = (size_t)rem;
   register size_t out asm("a6");
@@ -39,6 +50,7 @@ static inline int ame_msettilem(int rem) {
   return (int)out;
 }
 
+// msettilen: a0 = remaining columns, result in t2. Encoding 0x040543f7.
 static inline int ame_msettilen(int rem) {
   register size_t in asm("a0") = (size_t)rem;
   register size_t out asm("t2");
@@ -47,6 +59,7 @@ static inline int ame_msettilen(int rem) {
   return (int)out;
 }
 
+// msettilek: a3 is both the K remainder and the result. Encoding 0x0406e6f7.
 static inline int ame_msettilek(int rem) {
   register size_t inout asm("a3") = (size_t)rem;
   __asm__ volatile("fence rw, rw\n\t.word 0x0406e6f7\n\tfence rw, rw"
@@ -54,6 +67,7 @@ static inline int ame_msettilek(int rem) {
   return (int)inout;
 }
 
+// msettype: a0 holds the mtype bit-field. Encoding 0x00054077.
 static inline void ame_msettype(uint64_t mtype) {
   register uint64_t a0 asm("a0") = mtype;
   // Keep the NR configuration instruction and its register effects in one
@@ -65,6 +79,7 @@ static inline void ame_msettype(uint64_t mtype) {
                      "t1", "t2", "t3", "t4", "t5", "t6", "memory");
 }
 
+// mlae8.m: load the A tile. a0 = base, a1 = stride in bytes. 0x04b50077.
 static inline void ame_mlae8(const int8_t *base, int stride_bytes) {
   register const int8_t *a0 asm("a0") = base;
   register size_t a1 asm("a1") = (size_t)stride_bytes;
@@ -73,6 +88,7 @@ static inline void ame_mlae8(const int8_t *base, int stride_bytes) {
                    : "memory");
 }
 
+// mlbe8.m: non-transposed B load. a0 = base, a1 = stride. 0x08b50077.
 static inline void ame_mlbt8(const int8_t *base, int stride_bytes) {
   register const int8_t *a0 asm("a0") = base;
   register size_t a1 asm("a1") = (size_t)stride_bytes;
@@ -83,11 +99,13 @@ static inline void ame_mlbt8(const int8_t *base, int stride_bytes) {
                    : "memory");
 }
 
+// mqma.b.mm: int8*int8 -> int32 accumulate. No GPR operands. 0x28180877.
 static inline void ame_mqma_b(void) {
   __asm__ volatile("fence rw, rw\n\t.word 0x28180877\n\tfence rw, rw" ::
                        : "memory");
 }
 
+// mlce32.m: load the accumulator. t3 = base, t0 = stride. 0x005e2077.
 static inline void ame_mlce32(const float *base, int stride_bytes) {
   register const float *t3 asm("t3") = base;
   register size_t t0 asm("t0") = (size_t)stride_bytes;
@@ -96,6 +114,8 @@ static inline void ame_mlce32(const float *base, int stride_bytes) {
                    : "memory");
 }
 
+// msce32.m: store the accumulator. t3 = base, t0 = stride. 0x025e2077.
+// This store retires the 1x1 sync; it is not a lossless spill of a kernel tile.
 static inline void ame_msce32(float *base, int stride_bytes) {
   register float *t3 asm("t3") = base;
   register size_t t0 asm("t0") = (size_t)stride_bytes;

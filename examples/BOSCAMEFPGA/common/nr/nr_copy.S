@@ -33,28 +33,32 @@
   .globl nr_copy_bytes
   .type nr_copy_bytes,@function
 nr_copy_bytes:
-  # a0=dst, a1=src, a2=bytes
+  # a0=dst, a1=src, a2=bytes. Overlap is undefined; callers use memcpy only
+  # when the ranges do not overlap (memmove stays scalar in nr_runtime.c).
   beqz a2, .Ldone
-  # Fall back to bytes if either pointer is not 4-byte aligned.
+  # RVV e32 loads require 4-byte alignment. Either pointer misaligned -> bytes.
   or t1, a0, a1
   andi t1, t1, 3
   bnez t1, .Lbytes
-  andi a3, a2, 3          # leftover bytes after word copies
-  srli a2, a2, 2          # remaining 32-bit words
+  andi a3, a2, 3          # 0..3 bytes left after the word loop
+  srli a2, a2, 2          # word count still to copy
   beqz a2, .Ltail
 .Lwords:
-  li t0, 16               # VL max for e32,m1 on this board path
+  # e32,m1 is at most 16 lanes. Request min(remaining, 16); vsetvli may
+  # return fewer if the hardware VLMAX is smaller.
+  li t0, 16
   bgeu a2, t0, .Lsetvl
   mv t0, a2
 .Lsetvl:
   vsetvli t0, t0, e32, m1, ta, ma
+  # NR contract: fence rw,rw on both sides of every vector memory op.
   fence rw, rw
   vle32.v v8, (a1)
   fence rw, rw
   vse32.v v8, (a0)
   fence rw, rw
   sub a2, a2, t0
-  slli t0, t0, 2
+  slli t0, t0, 2          # advance pointers by vl * 4 bytes
   add a0, a0, t0
   add a1, a1, t0
   bnez a2, .Lwords
@@ -62,6 +66,8 @@ nr_copy_bytes:
   mv a2, a3
   beqz a2, .Ldone
 .Lbytes:
+  # Scalar tail (and the fully unaligned path). One fence after the loop is
+  # enough: these are ordinary loads/stores, not vector memory ops.
   lbu t0, 0(a1)
   sb t0, 0(a0)
   addi a0, a0, 1

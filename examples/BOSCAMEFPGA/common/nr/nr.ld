@@ -32,13 +32,14 @@ ENTRY(_start)
 /* 1 MiB stack per hart (NH then RA), placed after TBSS. */
 STACK_SIZE = 0x100000;
 
+/* FLAGS: 4 = read, 2 = write, 1 = execute. 5 = RX, 6 = RW. */
 PHDRS {
-  boot PT_LOAD FLAGS(5);      /* RX: .text.init */
-  mailbox PT_LOAD FLAGS(6);   /* RW: RA signal page */
-  text PT_LOAD FLAGS(5);      /* RX: text + rodata */
-  data PT_LOAD FLAGS(6);      /* RW: .data / .sdata / .tdata */
-  state PT_LOAD FLAGS(6);     /* RW: console, BSS, stacks (NOLOAD content) */
-  workspace PT_LOAD FLAGS(6); /* RW: high-DDR arena (NOLOAD) */
+  boot PT_LOAD FLAGS(5);      /* RX: .text.init, the NH entry page */
+  mailbox PT_LOAD FLAGS(6);   /* RW: fixed RA completion page, not in the .bin */
+  text PT_LOAD FLAGS(5);      /* RX: ordinary text + rodata */
+  data PT_LOAD FLAGS(6);      /* RW: initialized .data / .sdata / .tdata */
+  state PT_LOAD FLAGS(6);     /* RW: console, BSS, stacks; NOLOAD, zeroed by RA */
+  workspace PT_LOAD FLAGS(6); /* RW: high-DDR arena; NOLOAD, not zeroed */
 }
 
 MEMORY {
@@ -64,6 +65,7 @@ SECTIONS {
   .text : { *(.text .text.*) } > LOW :text
   .rodata : { *(.rodata .rodata.* .srodata .srodata.*) } > LOW :text
   .data ALIGN(64) : { *(.data .data.*) } > LOW :data
+  /* gp points 2 KiB into .sdata so +/-2 KiB gp-relative loads reach it. */
   .sdata ALIGN(64) : {
     __global_pointer$ = . + 0x800;
     *(.sdata .sdata.*)
@@ -99,7 +101,8 @@ SECTIONS {
     __ra_stack_top = .;
   } > LOW :state
 
-  /* Bump heap for malloc/aligned_alloc on RA; free() does not recycle. */
+  /* Bump heap for malloc/aligned_alloc on RA; free() does not recycle.
+     The cursor walks from here up to the end of LOW, still below 0xb0000000. */
   __heap_start = .;
   __heap_end = ORIGIN(LOW) + LENGTH(LOW);
   _end = .;

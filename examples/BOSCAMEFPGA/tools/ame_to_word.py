@@ -1,20 +1,4 @@
 #!/usr/bin/env python3
-"""Encode the verified NR FPGA AME subset with explicit GPR handling.
-
-Adapted from ModelZoo's examples/tools/ame_to_word.py, commit
-8815b74fb6d3cd6288c4d99ac6fd7c5d041a7cc3:
-https://gitlink.org.cn/michaelcjl/ModelZoo.git
-
-This example-side tool targets NR only. GEM5 uses the compiler backend directly.
-Run restrict_fpga_assembly.py afterwards to validate raw words and insert the
-required fence before AND after every AME instruction. No UART/MMIO tracing,
-legacy ISA fallback, or experimental environment-dependent encoding is provided.
-The default fixed mode retains the board-tested operand-preservation wrappers.
-Opt-in --gpr-mode=direct uses v0.5's full five-bit GPR fields for tile and memory
-instructions only. msettype retains its existing caller-saved preservation in
-both modes; this change makes no new claim about its hardware clobber behavior.
-"""
-
 # ===- ame_to_word.py -------------------------------------------------------------
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -30,6 +14,22 @@ both modes; this change makes no new claim about its hardware clobber behavior.
 # limitations under the License.
 #
 # ===----------------------------------------------------------------------
+
+"""Encode the verified NR FPGA AME subset with explicit GPR handling.
+
+Adapted from ModelZoo's examples/tools/ame_to_word.py, commit
+8815b74fb6d3cd6288c4d99ac6fd7c5d041a7cc3:
+https://gitlink.org.cn/michaelcjl/ModelZoo.git
+
+This example-side tool targets NR only. GEM5 uses the compiler backend directly.
+Run restrict_fpga_assembly.py afterwards to validate raw words and insert the
+required fence before AND after every AME instruction. No UART/MMIO tracing,
+legacy ISA fallback, or experimental environment-dependent encoding is provided.
+The default fixed mode retains the board-tested operand-preservation wrappers.
+Opt-in --gpr-mode=direct uses v0.5's full five-bit GPR fields for tile and memory
+instructions only. msettype retains its existing caller-saved preservation in
+both modes; this change makes no new claim about its hardware clobber behavior.
+"""
 
 import argparse
 import os

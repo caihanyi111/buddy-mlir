@@ -1,15 +1,4 @@
 #!/usr/bin/env python3
-"""Audit the complete linked NR ELF, including C launch and runtime code.
-
-Walk every SHF_EXECINSTR byte range from the ELF section table. LLVM objdump
-supplies RVV mnemonic names, but raw ELF bytes determine CSR/AME detection and
-fence adjacency, so data-mapped .word encodings cannot bypass the audit.
-This checks the NR AME/RVV contract, not arbitrary scalar ISA compatibility.
-
-Uses nr_isa.py (ModelZoo-adapted allowlists). See common/README.md for
-provenance; this tree does not invent license text for those sources.
-"""
-
 # ===- check_nr_elf.py -------------------------------------------------------------
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -25,6 +14,17 @@ provenance; this tree does not invent license text for those sources.
 # limitations under the License.
 #
 # ===----------------------------------------------------------------------
+
+"""Audit the complete linked NR ELF, including C launch and runtime code.
+
+Walk every SHF_EXECINSTR byte range from the ELF section table. LLVM objdump
+supplies RVV mnemonic names, but raw ELF bytes determine CSR/AME detection and
+fence adjacency, so data-mapped .word encodings cannot bypass the audit.
+This checks the NR AME/RVV contract, not arbitrary scalar ISA compatibility.
+
+Uses nr_isa.py (ModelZoo-adapted allowlists). See common/README.md for
+provenance; this tree does not invent license text for those sources.
+"""
 
 import argparse
 import hashlib

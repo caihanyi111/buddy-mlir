@@ -26,6 +26,11 @@
 // NR's RA does not use NH cache-management instructions. NH invalidates each
 // shared line before reading it; RA publishes data with volatile + fences,
 // matching ModelZoo's validated NR console and completion protocol.
+//
+// RA_SIGNAL is the fixed mailbox byte at 0x80010000 (nr.ld .nr_mailbox):
+//   0 = RA still running, 1 = launch returned 0 (PASS), 2 = FAIL.
+// RA_REGISTER is the platform block that programs and releases the RA hart.
+// The start order below is part of the contract; do not reorder the stores.
 #define RA_SIGNAL ((volatile uint8_t *)0x80010000UL)
 #define RA_REGISTER(offset) (*(volatile uint32_t *)(0x50000000UL + (offset)))
 #define LOG_CAPACITY (64u * 1024u)
@@ -189,6 +194,8 @@ void print_uart(const char *text) { nr_puts(text); }
 void print_uart_int(uint32_t value) { nr_hex32(value); }
 void print_uart_addr(uint64_t value) { nr_hex64(value); }
 
+// NH: copy newly published console bytes to UART. Cap each call at 256 bytes
+// so the same loop can still poll RX and the completion mailbox.
 static uint32_t drain(uint32_t consumed) {
   invalidate(&console.count);
   fence();
@@ -230,6 +237,9 @@ __attribute__((noreturn)) void nr_nh_main(void) {
   flush(&input.tail);
   *RA_SIGNAL = 0;
   flush(RA_SIGNAL);
+  // Release RA only after the console rings and the PASS/FAIL byte are visible.
+  // +0x100 is the entry PC. +0x60=0, +0x50=1, +0x60=1 is the board's release
+  // sequence; each store is fenced so the hart observes them in this order.
   __asm__ volatile("fence iorw, iorw" ::: "memory");
   RA_REGISTER(0x100) = (uint32_t)(uintptr_t)&_ra_start;
   __asm__ volatile("fence iorw, iorw" ::: "memory");
@@ -260,6 +270,8 @@ __attribute__((noreturn)) void nr_nh_main(void) {
   halt();
 }
 
+// RA: publish PASS (1) or FAIL (2) and stop. NH's drain loop exits on a
+// non-zero mailbox byte, then flushes any console bytes still queued.
 static __attribute__((noreturn)) void finish(int status) {
   fence();
   *RA_SIGNAL = status == 0 ? 1 : 2;
@@ -317,7 +329,9 @@ __attribute__((noreturn)) void __stack_chk_fail(void) {
 }
 uintptr_t __stack_chk_guard = (uintptr_t)0x9e3779b97f4a7c15ULL;
 
-// Ordinary scalar memory operations avoid unsupported vector spills/CSRs.
+// Scalar libc subset for launch code and MLIR kernels. These must not emit
+// RVV: general C is built without +v, and a vector spill here would fail the
+// ELF audit. nr_copy_bytes is the only RVV copy, and only for aligned ranges.
 typedef uint64_t CopyWord __attribute__((may_alias));
 void *memcpy(void *destination, const void *source, size_t count) {
   unsigned char *out = destination;
@@ -416,7 +430,9 @@ void *calloc(size_t count, size_t size) {
   return result;
 }
 
-// Standard MLIR CRunner ABI; rank <= 8, arbitrary strided element copies.
+// MLIR CRunner memrefCopy. Rank is at most 8. dimensions[] is
+// [sizes..., strides...]. A unit-stride layout is one memcpy; otherwise each
+// element is copied with its own source and destination index.
 typedef struct {
   int64_t rank;
   void *descriptor;

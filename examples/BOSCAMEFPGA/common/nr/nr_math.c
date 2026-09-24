@@ -74,6 +74,8 @@ static const uint64_t exp2_tab[32] = {
     0x3fef3720dcef9069ULL, 0x3fef5818dcfba487ULL, 0x3fef7c97337b9b5fULL,
     0x3fefa4afa2a490daULL, 0x3fefd0765b6e4540ULL};
 
+// expf: range-reduce to a 5-bit table index plus a polynomial in double.
+// Overflow/underflow match the usual single-precision cutoffs; NaN propagates.
 float expf(float value) {
   uint32_t ax = asuint(value) & 0x7fffffffU;
   if (ax >= 0x42b00000U) {
@@ -120,6 +122,9 @@ static const struct log_entry log_tab[16] = {
     {0x1.886e6037841edp-1, 0x1.1058bc8a07ee1p-2},
     {0x1.767dcf5534862p-1, 0x1.4043057b6ee09p-2}};
 
+// logf: subnormals are scaled into the normal range. Negative, NaN, and
+// +/-Inf follow the usual single-precision special cases; the body is a
+// 16-entry invc/logc reduction plus a short polynomial.
 float logf(float value) {
   uint32_t ix = asuint(value);
   if (ix - 0x00800000U >= 0x7f800000U - 0x00800000U) {
@@ -143,6 +148,8 @@ float logf(float value) {
   return (float)(y * r2 + y0 + r);
 }
 
+// powf: small integer exponents use exponentiation by squaring. Everything
+// else is exp(exponent * log(base)); non-positive bases return 0.
 float powf(float base, float exponent) {
   int integer = (int)exponent;
   if ((float)integer == exponent && integer >= -64 && integer <= 64) {
@@ -163,6 +170,7 @@ float powf(float base, float exponent) {
   return expf(exponent * logf(base));
 }
 
+// tanhf: saturate outside [-9, 9], then (e^{2x}-1)/(e^{2x}+1).
 float tanhf(float value) {
   if (value >= 9.0f)
     return 1.0f;
@@ -174,6 +182,8 @@ float tanhf(float value) {
   return (exponential - 1.0f) / (exponential + 1.0f);
 }
 
+// erff: Abramowitz-Stegun approximation. Odd function; the polynomial is in
+// t = 1/(1+p|x|). _mlir_ciface_erff is the MLIR C interface wrapper.
 float erff(float value) {
   int negative = value < 0.0f;
   float x = negative ? -value : value;
@@ -190,6 +200,7 @@ float erff(float value) {
 
 float _mlir_ciface_erff(float value) { return erff(value); }
 
+// sqrtf: fsqrt.s on RISC-V. The host build falls back to libm sqrt.
 float sqrtf(float value) {
 #if defined(__riscv)
   float result;

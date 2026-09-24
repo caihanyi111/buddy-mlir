@@ -1,11 +1,4 @@
 #!/usr/bin/env python3
-"""Link selected, independently generated operator objects into one NR image.
-
-Reads each operator directory's metadata.json / built objects, packs them with
-the shared NR CRT + runtime, and emits a single UVHS-loadable .bin. Used by
-make suite targets under qwen3-0.6b/; does not recompile kernels itself.
-"""
-
 # ===- build_suite.py -------------------------------------------------------------
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -21,6 +14,13 @@ make suite targets under qwen3-0.6b/; does not recompile kernels itself.
 # limitations under the License.
 #
 # ===----------------------------------------------------------------------
+
+"""Link selected, independently generated operator objects into one NR image.
+
+Reads each operator directory's metadata.json / built objects, packs them with
+the shared NR CRT + runtime, and emits a single UVHS-loadable .bin. Used by
+make suite targets under qwen3-0.6b/; does not recompile kernels itself.
+"""
 
 import argparse
 import hashlib
