@@ -6,8 +6,12 @@
 // RUN: not buddy-opt %t/misaligned.mlir --lower-linalg-to-boscame='enable-spm-dma=true enable-ame=true dma-abi=args_aligned64_nonalias target=nr-fpga' 2>&1 | FileCheck %s --check-prefix=ALIGN
 // RUN: not buddy-opt %t/misaligned-row.mlir --lower-linalg-to-boscame='enable-spm-dma=true enable-ame=true dma-abi=args_aligned64_nonalias target=nr-fpga' 2>&1 | FileCheck %s --check-prefix=ALIGN
 // RUN: not buddy-opt %t/overlapping-rows.mlir --lower-linalg-to-boscame='enable-spm-dma=true enable-ame=true dma-abi=args_aligned64_nonalias target=nr-fpga' 2>&1 | FileCheck %s --check-prefix=OVERLAP
-// RUN: not buddy-opt %t/capacity.mlir --lower-linalg-to-boscame='enable-spm-dma=true enable-ame=true dma-abi=args_aligned64_nonalias target=nr-fpga' 2>&1 | FileCheck %s --check-prefix=CAPACITY
-// RUN: not buddy-opt %t/simultaneous-capacity.mlir --lower-linalg-to-boscame='enable-spm-dma=true enable-ame=true dma-abi=args_aligned64_nonalias target=nr-fpga' 2>&1 | FileCheck %s --check-prefix=CAPACITY
+// Oversized / simultaneous working sets spill to DDR (ordinary loops) instead
+// of hard-failing on the typed Planner path.
+// RUN: buddy-opt %t/capacity.mlir --linalg-to-boscame='enable-spm-dma=true enable-ame=true dma-abi=args_aligned64_nonalias target=nr-fpga plan-report=true' -o - 2>%t/capacity.plan.txt | FileCheck %s --check-prefix=SPILL
+// RUN: FileCheck %s --check-prefix=SPILL-PLAN --input-file=%t/capacity.plan.txt
+// RUN: buddy-opt %t/simultaneous-capacity.mlir --linalg-to-boscame='enable-spm-dma=true enable-ame=true dma-abi=args_aligned64_nonalias target=nr-fpga plan-report=true' -o - 2>%t/simultaneous.plan.txt | FileCheck %s --check-prefix=SPILL
+// RUN: FileCheck %s --check-prefix=SPILL-PLAN --input-file=%t/simultaneous.plan.txt
 // RUN: not buddy-opt %t/element-type.mlir --lower-linalg-to-boscame='enable-spm-dma=true enable-ame=true dma-abi=args_aligned64_nonalias target=nr-fpga' 2>&1 | FileCheck %s --check-prefix=ELEMENT
 
 // These are transfer-contract failures, before any AME tile is emitted.
@@ -18,7 +22,9 @@
 // SHAPE: BOSCAME transfer shape must be static
 // ALIGN: 64 B aligned
 // OVERLAP: physical rows overlap
-// CAPACITY: BOSCAME SPM workspace capacity exceeded
+// SPILL: func.func
+// SPILL-NOT: bosc_ame.spm.view
+// SPILL-PLAN: capacity-spills={{[1-9][0-9]*}}
 // ELEMENT: unsupported typed DMA element type
 
 //--- no-unit-stride.mlir

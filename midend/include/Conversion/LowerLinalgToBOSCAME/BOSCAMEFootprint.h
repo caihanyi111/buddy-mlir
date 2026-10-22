@@ -266,6 +266,9 @@ struct ResourceEstimate {
   uint64_t bankAllocationRepairGroups = 0;
   uint64_t bankAllocationRepairSearchNodes = 0;
   uint64_t bankAllocationRepairRejectedPlacements = 0;
+  /// Operation-local SPM staging that did not fit and was spilled to DDR
+  /// (ordinary loop lowering) instead of failing the compile.
+  uint64_t capacitySpills = 0;
 };
 
 enum class ResidencyDecisionReason { Selected, Capacity, NoTrafficBenefit };

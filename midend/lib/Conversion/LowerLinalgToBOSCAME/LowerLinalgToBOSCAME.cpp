@@ -1968,6 +1968,7 @@ static void printBOSCAMEPlanReport(ModuleOp module,
          << workspace.resources.bankAllocationRepairSearchNodes
          << " repair-rejected-placements="
          << workspace.resources.bankAllocationRepairRejectedPlacements
+         << " capacity-spills=" << workspace.resources.capacitySpills
          << " objective=minimize-bank-high-water status="
          << (workspace.resources.bankAllocationBoundedGroups == 0 ? "exact"
                                                                   : "bounded")

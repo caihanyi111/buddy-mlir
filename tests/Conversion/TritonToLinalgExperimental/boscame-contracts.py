@@ -92,10 +92,10 @@ def main():
         unaligned,
         expect="effective address cannot be proven 64 B aligned",
     )
+    # Oversized working sets spill to DDR instead of hard-failing.
     invoke(
         "capacity",
         copy_kernel(size=131072),
-        expect="SPM workspace capacity exceeded",
     )
     for name, options in (
         ("gather", {"gather": True}),

@@ -5642,7 +5642,18 @@ FailureOr<DataflowPlan> BOSCAMEPlanner::plan(ModuleOp module) const {
       }
     }
     if (!allocation) {
-      status = op.emitError("BOSCAME SPM workspace capacity exceeded");
+      // Staging this operation-local working set does not fit in the two SPM
+      // banks. AME tiles and operands that already live in fixed SPM still
+      // require SPM placement. Otherwise spill the op to DDR and let ordinary
+      // loop lowering consume the original buffers. Mixed DDR/SPM operands are
+      // intentionally avoided: SPM vector lowering requires every non-scalar
+      // operand to share one placement.
+      if (usesFixedSpm ||
+          op->hasAttr(::buddy::boscame::lowering::kLowerToAme)) {
+        status = op.emitError("BOSCAME SPM workspace capacity exceeded");
+        return;
+      }
+      ++workspace.resources.capacitySpills;
       return;
     }
     for (auto [index, transfer] : llvm::enumerate(operationTransfers)) {
