@@ -15,6 +15,7 @@
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Dialect/Vector/IR/VectorOps.h"
+#include "mlir/IR/AffineMap.h"
 #include "mlir/IR/IRMapping.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include <cassert>
@@ -82,6 +83,48 @@ LogicalResult checkVectorBuffer(Operation *op, Value value) {
 int64_t lanesFor(Value value) {
   auto type = cast<MemRefType>(value.getType());
   return kDmaAlignmentBytes / getSpmElementByteWidth(type.getElementType());
+}
+
+/// Accept identity operands and projected-permutation broadcasts whose
+/// dimensions match the corresponding output extents (e.g. Bias[N] with
+/// map (d0,d1)->(d1) against Out[M,N]).
+static bool isCompatibleSpmOperandMap(AffineMap map, MemRefType operandType,
+                                      MemRefType outputType) {
+  if (map.isIdentity() && operandType.getShape() == outputType.getShape())
+    return true;
+  if (!map.isProjectedPermutation() ||
+      map.getNumResults() != operandType.getRank())
+    return false;
+  for (auto [resultIndex, expr] : llvm::enumerate(map.getResults())) {
+    auto dim = dyn_cast<AffineDimExpr>(expr);
+    if (!dim || dim.getPosition() >= outputType.getRank() ||
+        operandType.getDimSize(resultIndex) !=
+            outputType.getDimSize(dim.getPosition()))
+      return false;
+  }
+  return true;
+}
+
+/// Vectorization walks the output's last axis. An operand can supply a full
+/// vector chunk when its map's last result is that axis (unit-stride vector
+/// load along the operand's last physical dim). Otherwise the value is loaded
+/// as a scalar and broadcast into the vector lane.
+static bool operandSuppliesVectorChunk(AffineMap map, unsigned outputRank) {
+  if (map.getNumResults() == 0 || outputRank == 0)
+    return false;
+  auto last = dyn_cast<AffineDimExpr>(map.getResults().back());
+  return last && last.getPosition() == outputRank - 1;
+}
+
+static SmallVector<Value>
+projectIndices(AffineMap map, ValueRange iterationIndices) {
+  SmallVector<Value> projected;
+  projected.reserve(map.getNumResults());
+  for (AffineExpr expr : map.getResults()) {
+    auto dim = cast<AffineDimExpr>(expr);
+    projected.push_back(iterationIndices[dim.getPosition()]);
+  }
+  return projected;
 }
 
 template <typename Body>
@@ -340,13 +383,23 @@ LogicalResult checkGeneric(linalg::GenericOp op) {
             "SPM generic requires placement of every non-scalar operand; "
             "mixed DDR/SPM computation could carry vectors across cache "
             "policy calls");
-      if (type.getShape() != outputType.getShape() ||
-          !maps[number].isIdentity() ||
-          (!predicateOutput &&
-           getSpmElementByteWidth(type.getElementType()) != bytes))
+      // Outputs stay identity+matching shape. Inputs may be projected
+      // broadcasts such as Bias[N] with (d0,d1)->(d1) for ACC[M,N]+Bias[N].
+      if (isOutput) {
+        if (type.getShape() != outputType.getShape() ||
+            !maps[number].isIdentity() ||
+            (!predicateOutput &&
+             getSpmElementByteWidth(type.getElementType()) != bytes))
+          return op.emitError(
+              "SPM generic requires matching shapes, element byte widths and "
+              "identity indexing maps");
+      } else if (!isCompatibleSpmOperandMap(maps[number], type, outputType) ||
+                 (!predicateOutput &&
+                  getSpmElementByteWidth(type.getElementType()) != bytes)) {
         return op.emitError(
             "SPM generic requires matching shapes, element byte widths and "
             "identity indexing maps");
+      }
     } else if (!isVectorElement(operand.getType()) ||
                maps[number].getNumResults()) {
       return op.emitError("unsupported SPM generic scalar operand");
@@ -465,20 +518,31 @@ void lowerGeneric(linalg::GenericOp op) {
         scalars[argument] = operand;
       }
     }
+  auto maps = op.getIndexingMapsArray();
   auto emitIteration = [&](ValueRange indices, bool selectTrueBranch) {
     IRMapping mapping;
-    for (auto [argument, operand] :
-         llvm::zip(body.getArguments(), op.getOperands())) {
+    for (auto [argNumber, argumentAndOperand] :
+         llvm::enumerate(llvm::zip(body.getArguments(), op.getOperands()))) {
+      auto [argument, operand] = argumentAndOperand;
       if (argument.use_empty())
         continue;
       auto vectorType = VectorType::get({lanes}, argument.getType());
       Value value;
-      if (auto scalar = scalars.find(argument); scalar != scalars.end())
+      if (auto scalar = scalars.find(argument); scalar != scalars.end()) {
         value = vector::BroadcastOp::create(builder, loc, vectorType,
                                             scalar->second);
-      else
-        value =
-            vector::LoadOp::create(builder, loc, vectorType, operand, indices);
+      } else {
+        AffineMap map = maps[argNumber];
+        SmallVector<Value> operandIndices = projectIndices(map, indices);
+        if (operandSuppliesVectorChunk(map, outputType.getRank())) {
+          value = vector::LoadOp::create(builder, loc, vectorType, operand,
+                                         operandIndices);
+        } else {
+          Value scalar =
+              memref::LoadOp::create(builder, loc, operand, operandIndices);
+          value = vector::BroadcastOp::create(builder, loc, vectorType, scalar);
+        }
+      }
       mapping.map(argument, value);
     }
     auto mapped = [&](Value value) -> Value {
